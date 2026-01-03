@@ -6,7 +6,7 @@ project (UMOne)
 
 SET(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-set (CMAKE_CXX_STANDARD 17)
+set (CMAKE_CXX_STANDARD 23)
 
 find_package(LibUSB REQUIRED)
 message(STATUS "LibUSB include directory is ${LibUSB_INCLUDE_DIRS}")
