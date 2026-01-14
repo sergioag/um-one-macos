@@ -68,7 +68,7 @@ void deviceLoop() {
     // printf("\n");
   };
 
-  auto flushSysexToHost = [&]() {
+  auto flushSysexToHost = [&] {
     if (sysexInBytes.size() < 4) {
       sysexInBytes.push_back(0);
       sysexInBytes.push_back(0);
@@ -85,14 +85,14 @@ void deviceLoop() {
     sysexInBytes.clear();
   };
 
-  auto pushSysexToUSB = [&](unsigned char byte) {
+  auto pushSysexToUSB = [&](const unsigned char byte) {
     if (sysexOutBytes.size() == 48) {
       flushSysexToUSB();
     }
     sysexOutBytes.push_back(byte);
   };
 
-  auto endSysexToUSB = [&](unsigned char byte) {
+  auto endSysexToUSB = [&](const unsigned char byte) {
     if (sysexOutBytes.size() == 48) {
       flushSysexToUSB();
     }
