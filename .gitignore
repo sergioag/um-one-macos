@@ -3,6 +3,11 @@ CMakeCache.txt
 CMakeFiles
 Makefile
 cmake_install.cmake
+Testing
 
 # Output files
 driver
+
+# IDE files
+.idea
+.cmake
