@@ -22,6 +22,73 @@ void signalHandler(int /*sig*/) {
   exiting = true;
 }
 
+void flushSysexToUSB(std::vector<unsigned char>& sysexOutBytes) {
+  std::vector<unsigned char> sysexSendBytes;
+  for (size_t j = 0; j < sysexOutBytes.size(); j += 3) {
+    if (j == sysexOutBytes.size() - 3) {
+      sysexSendBytes.push_back(0x07);
+      sysexSendBytes.push_back(sysexOutBytes[j + 0]);
+      sysexSendBytes.push_back(sysexOutBytes[j + 1]);
+      sysexSendBytes.push_back(sysexOutBytes[j + 2]);
+    } else if (j == sysexOutBytes.size() - 2) {
+      sysexSendBytes.push_back(0x06);
+      sysexSendBytes.push_back(sysexOutBytes[j + 0]);
+      sysexSendBytes.push_back(sysexOutBytes[j + 1]);
+    } else if (j == sysexOutBytes.size() - 1) {
+      sysexSendBytes.push_back(0x05);
+      sysexSendBytes.push_back(sysexOutBytes[j + 0]);
+    } else {
+      sysexSendBytes.push_back(0x04);
+      sysexSendBytes.push_back(sysexOutBytes[j + 0]);
+      sysexSendBytes.push_back(sysexOutBytes[j + 1]);
+      sysexSendBytes.push_back(sysexOutBytes[j + 2]);
+    }
+  }
+
+  int actualLength = 0;
+  libusb_bulk_transfer(deviceHandle, 0x02, &sysexSendBytes[0],
+                       static_cast<int>(sysexSendBytes.size()), &actualLength, 1);
+  sysexOutBytes.clear();
+
+  // printf("Sending sysex: ");
+  // for (size_t i = 0; i < sysexSendBytes.size(); i++) {
+  //   printf("%02x ", sysexSendBytes[i]);
+  // }
+  // printf("\n");
+}
+
+void flushSysexToHost(std::vector<unsigned char>& sysexInBytes) {
+  if (sysexInBytes.size() < 4) {
+    sysexInBytes.push_back(0);
+    sysexInBytes.push_back(0);
+    sysexInBytes.push_back(0);
+    sysexInBytes.push_back(0);
+  }
+
+  PmEvent event;
+  event.timestamp = Pt_Time();
+  event.message = (sysexInBytes[0] << 0) | (sysexInBytes[1] << 8) |
+                  (sysexInBytes[2] << 16) | (sysexInBytes[3] << 24);
+  Pm_Write(outputPort, &event, 1);
+
+  sysexInBytes.clear();
+}
+
+void pushSysexToUSB(const unsigned char byte, std::vector<unsigned char>& sysexOutBytes) {
+  if (sysexOutBytes.size() == 48) {
+    flushSysexToUSB(sysexOutBytes);
+  }
+  sysexOutBytes.push_back(byte);
+}
+
+void endSysexToUSB(const unsigned char byte, std::vector<unsigned char>& sysexOutBytes) {
+  if (sysexOutBytes.size() == 48) {
+    flushSysexToUSB(sysexOutBytes);
+  }
+  sysexOutBytes.push_back(byte);
+  flushSysexToUSB(sysexOutBytes);
+}
+
 void deviceLoop() {
   PmEvent buffer[1];
 
@@ -32,73 +99,6 @@ void deviceLoop() {
   bool sysexSendMode = false;
   std::vector<unsigned char> sysexOutBytes;
   std::vector<unsigned char> sysexInBytes;
-
-  auto flushSysexToUSB = [&] {
-    std::vector<unsigned char> sysexSendBytes;
-    for (size_t j = 0; j < sysexOutBytes.size(); j += 3) {
-      if (j == sysexOutBytes.size() - 3) {
-        sysexSendBytes.push_back(0x07);
-        sysexSendBytes.push_back(sysexOutBytes[j + 0]);
-        sysexSendBytes.push_back(sysexOutBytes[j + 1]);
-        sysexSendBytes.push_back(sysexOutBytes[j + 2]);
-      } else if (j == sysexOutBytes.size() - 2) {
-        sysexSendBytes.push_back(0x06);
-        sysexSendBytes.push_back(sysexOutBytes[j + 0]);
-        sysexSendBytes.push_back(sysexOutBytes[j + 1]);
-      } else if (j == sysexOutBytes.size() - 1) {
-        sysexSendBytes.push_back(0x05);
-        sysexSendBytes.push_back(sysexOutBytes[j + 0]);
-      } else {
-        sysexSendBytes.push_back(0x04);
-        sysexSendBytes.push_back(sysexOutBytes[j + 0]);
-        sysexSendBytes.push_back(sysexOutBytes[j + 1]);
-        sysexSendBytes.push_back(sysexOutBytes[j + 2]);
-      }
-    }
-
-    int actualLength = 0;
-    libusb_bulk_transfer(deviceHandle, 0x02, &sysexSendBytes[0],
-                         static_cast<int>(sysexSendBytes.size()), &actualLength, 1);
-    sysexOutBytes.clear();
-
-    // printf("Sending sysex: ");
-    // for (size_t i = 0; i < sysexSendBytes.size(); i++) {
-    //   printf("%02x ", sysexSendBytes[i]);
-    // }
-    // printf("\n");
-  };
-
-  auto flushSysexToHost = [&] {
-    if (sysexInBytes.size() < 4) {
-      sysexInBytes.push_back(0);
-      sysexInBytes.push_back(0);
-      sysexInBytes.push_back(0);
-      sysexInBytes.push_back(0);
-    }
-
-    PmEvent event;
-    event.timestamp = Pt_Time();
-    event.message = (sysexInBytes[0] << 0) | (sysexInBytes[1] << 8) |
-                    (sysexInBytes[2] << 16) | (sysexInBytes[3] << 24);
-    Pm_Write(outputPort, &event, 1);
-
-    sysexInBytes.clear();
-  };
-
-  auto pushSysexToUSB = [&](const unsigned char byte) {
-    if (sysexOutBytes.size() == 48) {
-      flushSysexToUSB();
-    }
-    sysexOutBytes.push_back(byte);
-  };
-
-  auto endSysexToUSB = [&](const unsigned char byte) {
-    if (sysexOutBytes.size() == 48) {
-      flushSysexToUSB();
-    }
-    sysexOutBytes.push_back(byte);
-    flushSysexToUSB();
-  };
 
   exiting = false;
 
@@ -124,31 +124,31 @@ void deviceLoop() {
 
         if (sysexSendMode) {
           if (const auto b1 = (buffer[j].message >> 0) & 0xFF; b1 != 0xF0 && b1 & 0b10000000) {
-            endSysexToUSB(b1);
+            endSysexToUSB(b1, sysexOutBytes);
             sysexSendMode = false;
           } else if (sysexSendMode) {
-            pushSysexToUSB(b1);
+            pushSysexToUSB(b1, sysexOutBytes);
           }
 
           if (const auto b2 = (buffer[j].message >> 8) & 0xFF; b2 != 0xF0 && b2 & 0b10000000) {
-            endSysexToUSB(b2);
+            endSysexToUSB(b2, sysexOutBytes);
             sysexSendMode = false;
           } else if (sysexSendMode) {
-            pushSysexToUSB(b2);
+            pushSysexToUSB(b2, sysexOutBytes);
           }
 
           if (const auto b3 = (buffer[j].message >> 16) & 0xFF; b3 != 0xF0 && b3 & 0b10000000) {
-            endSysexToUSB(b3);
+            endSysexToUSB(b3, sysexOutBytes);
             sysexSendMode = false;
           } else if (sysexSendMode) {
-            pushSysexToUSB(b3);
+            pushSysexToUSB(b3, sysexOutBytes);
           }
 
           if (const auto b4 = (buffer[j].message >> 24) & 0xFF; b4 != 0xF0 && b4 & 0b10000000) {
-            endSysexToUSB(b4);
+            endSysexToUSB(b4, sysexOutBytes);
             sysexSendMode = false;
           } else if (sysexSendMode) {
-            pushSysexToUSB(b4);
+            pushSysexToUSB(b4, sysexOutBytes);
           }
         } else {
           sendBuffer[j * 4 + 0] =
@@ -189,22 +189,22 @@ void deviceLoop() {
         if (controlByte == 0x04) {
           sysexInBytes.push_back(b1);
           if (sysexInBytes.size() == 4)
-            flushSysexToHost();
+            flushSysexToHost(sysexInBytes);
           sysexInBytes.push_back(b2);
           if (sysexInBytes.size() == 4)
-            flushSysexToHost();
+            flushSysexToHost(sysexInBytes);
           sysexInBytes.push_back(b3);
           if (sysexInBytes.size() == 4)
-            flushSysexToHost();
+            flushSysexToHost(sysexInBytes);
         } else if (controlByte >= 0x05 && controlByte <= 0x07) {
           sysexInBytes.push_back(b1);
           if (sysexInBytes.size() == 4)
-            flushSysexToHost();
+            flushSysexToHost(sysexInBytes);
           sysexInBytes.push_back(b2);
           if (sysexInBytes.size() == 4)
-            flushSysexToHost();
+            flushSysexToHost(sysexInBytes);
           sysexInBytes.push_back(b3);
-          flushSysexToHost();
+          flushSysexToHost(sysexInBytes);
         } else {
           PmEvent event;
           event.timestamp = Pt_Time();
@@ -250,7 +250,7 @@ int initPorts() {
   sysdepinfo->structVersion = PM_SYSDEPINFO_VERS;
   sysdepinfo->length = 1;
   sysdepinfo->properties[0].key = pmKeyCoreMidiManufacturer;
-  const char *strRoland = "Roland";
+  const auto strRoland = "Roland";
   sysdepinfo->properties[0].value = strRoland;
 
   inputPortId = Pm_CreateVirtualInput("UM-ONE", nullptr, sysdepinfo);
@@ -267,7 +267,7 @@ int initPorts() {
   Pm_OpenInput(&inputPort, inputPortId, nullptr, 0, nullptr, nullptr);
   Pm_OpenOutput(&outputPort, outputPortId, nullptr, OUTPUT_BUFFER_SIZE, TIME_PROC,
                 TIME_INFO, 0);
-  printf("Created/Opened input %d and output %d\n", inputPortId, outputPortId);
+  std::cout << "Created/Opened input " << inputPortId << " and output " << outputPortId << std::endl;
   Pm_SetFilter(inputPort, PM_FILT_ACTIVE | PM_FILT_CLOCK);
 
   // Empty the buffer, just in case anything got through
@@ -283,8 +283,7 @@ int main() {
   libusb_init_context(/*ctx=*/nullptr, /*options=*/nullptr, /*num_options=*/0);
 
   libusb_device **devs;
-  ssize_t cnt = libusb_get_device_list(nullptr, &devs);
-  if (cnt < 0) {
+  if (const ssize_t cnt = libusb_get_device_list(nullptr, &devs); cnt < 0) {
     std::cout << "No libusb" << std::endl;
     libusb_exit(nullptr);
     return 1;
