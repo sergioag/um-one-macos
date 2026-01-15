@@ -14,7 +14,7 @@ message(STATUS "LibUSB include directory is ${LibUSB_INCLUDE_DIRS}")
 find_package(PortMidi REQUIRED)
 message(STATUS "PortMIDI include directory is ${PORTMIDI_INCLUDE_DIR}")
 
-add_executable(driver driver.cpp)
+add_executable(driver driver.cpp usb_device.cpp)
 
 target_include_directories(driver PUBLIC ${LibUSB_INCLUDE_DIRS} ${PORTMIDI_INCLUDE_DIR})
 target_link_libraries(driver ${LibUSB_LIBRARIES} ${PORTMIDI_LIBRARIES})

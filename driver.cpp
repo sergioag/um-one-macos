@@ -2,7 +2,7 @@
 #include <iostream>
 #include <vector>
 
-#include <libusb-1.0/libusb.h>
+#include "usb_device.h"
 #include <portmidi.h>
 #include <porttime.h>
 
@@ -11,7 +11,7 @@
 #define TIME_PROC ((PmTimeProcPtr)Pt_Time)
 #define TIME_INFO nullptr
 
-libusb_device_handle *deviceHandle = nullptr;
+UsbDevice* usbDevice = nullptr;
 PmStream* inputPort = nullptr;
 PmStream* outputPort = nullptr;
 int inputPortId = -1;
@@ -46,8 +46,8 @@ void flushSysexToUSB(std::vector<unsigned char>& sysexOutBytes) {
   }
 
   int actualLength = 0;
-  libusb_bulk_transfer(deviceHandle, 0x02, &sysexSendBytes[0],
-                       static_cast<int>(sysexSendBytes.size()), &actualLength, 1);
+  usbDevice->write(&sysexSendBytes[0],
+                   static_cast<int>(sysexSendBytes.size()), &actualLength, 1);
   sysexOutBytes.clear();
 
   // printf("Sending sysex: ");
@@ -160,7 +160,7 @@ void deviceLoop() {
       }
 
       int actualLength = 0;
-      /*result = */libusb_bulk_transfer(deviceHandle, 0x02, sendBuffer, length * 4,
+      /*result = */usbDevice->write(sendBuffer, length * 4,
                                     &actualLength, 1);
       // std::cout << "Result: " << libusb_error_name(result) <<
       // std::endl; std::cout << "Actual length: " << actualLength <<
@@ -170,10 +170,10 @@ void deviceLoop() {
     // Read from USB
     int actualLength = 0;
     unsigned char readBuffer[64] = {};
-    const int result = libusb_bulk_transfer(deviceHandle, 0x81, readBuffer,
+    const UsbError result = usbDevice->read(readBuffer,
                                   sizeof(readBuffer), &actualLength, 1);
     // std::cout << "Read: " << libusb_error_name(result) << std::endl;
-    if (result == LIBUSB_SUCCESS && actualLength > 0) {
+    if (result == UsbError::Success && actualLength > 0) {
       // for (size_t i = 0; i < actualLength; i++) {
       //   printf("%02X", readBuffer[i]);
       // }
@@ -218,27 +218,6 @@ void deviceLoop() {
   }
 }
 
-libusb_device_handle * openDevice(libusb_device *dev) {
-  libusb_device_handle *handle;
-  libusb_open(dev, &handle);
-
-  if (!handle) {
-    return nullptr;
-  }
-
-  if (const int result = libusb_claim_interface(handle, 0); result != LIBUSB_SUCCESS) {
-    std::cout << "Error claiming interface: " << libusb_error_name(result)
-              << std::endl;
-  }
-
-  // result = libusb_set_interface_alt_setting(handle, 0, 0);
-  // if (result != LIBUSB_SUCCESS) {
-  //   std::cout << "Error setting interface: " << libusb_error_name(result)
-  //             << std::endl;
-  // }
-
-  return handle;
-}
 
 int initPorts() {
   Pm_Initialize();
@@ -280,56 +259,35 @@ int initPorts() {
 
 int main() {
 
-  libusb_init_context(/*ctx=*/nullptr, /*options=*/nullptr, /*num_options=*/0);
+  usbDevice = new UsbDevice(0x0582, 0x012A);
+  UsbError result = usbDevice->connect();
 
-  libusb_device **devs;
-  if (const ssize_t cnt = libusb_get_device_list(nullptr, &devs); cnt < 0) {
-    std::cout << "No libusb" << std::endl;
-    libusb_exit(nullptr);
+  if (result != UsbError::Success) {
+    if (result == UsbError::DeviceNotFound) {
+      std::cout << "Device not found" << std::endl;
+    } else if (result == UsbError::OpenFailed) {
+      std::cout << "Cannot open device" << std::endl;
+    } else {
+      std::cout << "Generic USB error" << std::endl;
+    }
+    delete usbDevice;
     return 1;
   }
 
-  bool found = false;
-
-  for (ssize_t i = 0; devs[i]; i++) {
-    libusb_device_descriptor desc{};
-    libusb_get_device_descriptor(devs[i], &desc);
-    if (desc.idVendor == 0x0582 && desc.idProduct == 0x012A) {
-      deviceHandle = openDevice(devs[i]);
-      if (!deviceHandle) {
-        std::cout << "No handle" << std::endl;
-        continue;
-      }
-      found = true;
-      break;
-    }
-  }
-  libusb_free_device_list(devs, 1);
-
-  if (found) {
-    if (initPorts() >= 0) {
-      signal(SIGINT, signalHandler);
-      deviceLoop();
-    }
-    else {
-      std::cout << "Failed to initialize PortMIDI ports" << std::endl;
-    }
-
-    Pm_Close(outputPort);
-    Pm_Close(inputPort);
-    Pm_DeleteVirtualDevice(inputPortId);
-    Pm_DeleteVirtualDevice(outputPortId);
-    Pm_Terminate();
-
-    libusb_release_interface(deviceHandle, 0);
-    libusb_close(deviceHandle);
-    libusb_exit(nullptr);
-    return 0;
+  if (initPorts() >= 0) {
+    signal(SIGINT, signalHandler);
+    deviceLoop();
   }
   else {
-    std::cout << "No device" << std::endl;
-    libusb_exit(nullptr);
-    return 1;
+    std::cout << "Failed to initialize PortMIDI ports" << std::endl;
   }
 
+  Pm_Close(outputPort);
+  Pm_Close(inputPort);
+  Pm_DeleteVirtualDevice(inputPortId);
+  Pm_DeleteVirtualDevice(outputPortId);
+  Pm_Terminate();
+
+  delete usbDevice;
+  return 0;
 }
