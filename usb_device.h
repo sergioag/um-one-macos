@@ -26,10 +26,10 @@ public:
 
     UsbError connect();
     void disconnect();
-    bool isConnected() const;
+    [[nodiscard]] bool isConnected() const;
 
-    UsbError read(unsigned char* buffer, int size, int* actualLength, unsigned int timeout);
-    UsbError write(unsigned char* buffer, int size, int* actualLength, unsigned int timeout);
+    UsbError read(unsigned char* buffer, int size, int* actualLength, unsigned int timeout) const;
+    UsbError write(unsigned char* buffer, int size, int* actualLength, unsigned int timeout) const;
 
 private:
     uint16_t vendorId_;

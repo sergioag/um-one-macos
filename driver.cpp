@@ -260,9 +260,8 @@ int initPorts() {
 int main() {
 
   usbDevice = new UsbDevice(0x0582, 0x012A);
-  UsbError result = usbDevice->connect();
 
-  if (result != UsbError::Success) {
+  if (const UsbError result = usbDevice->connect(); result != UsbError::Success) {
     if (result == UsbError::DeviceNotFound) {
       std::cout << "Device not found" << std::endl;
     } else if (result == UsbError::OpenFailed) {

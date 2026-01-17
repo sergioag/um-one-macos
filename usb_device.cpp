@@ -1,8 +1,7 @@
 #include "usb_device.h"
-#include <cstdint>
 #include <libusb-1.0/libusb.h>
 
-UsbDevice::UsbDevice(uint16_t vendorId, uint16_t productId)
+UsbDevice::UsbDevice(const uint16_t vendorId, const uint16_t productId)
     : vendorId_(vendorId)
     , productId_(productId)
     , deviceHandle_(nullptr)
@@ -24,8 +23,7 @@ UsbError UsbDevice::connect() {
     contextInitialized_ = true;
 
     libusb_device** devs;
-    ssize_t cnt = libusb_get_device_list(nullptr, &devs);
-    if (cnt < 0) {
+    if (const ssize_t cnt = libusb_get_device_list(nullptr, &devs); cnt < 0) {
         libusb_exit(nullptr);
         contextInitialized_ = false;
         return UsbError::NoDeviceList;
@@ -86,15 +84,14 @@ bool UsbDevice::isConnected() const {
     return deviceHandle_ != nullptr;
 }
 
-UsbError UsbDevice::read(unsigned char* buffer, int size, int* actualLength, unsigned int timeout) {
+UsbError UsbDevice::read(unsigned char* buffer, const int size, int* actualLength, const unsigned int timeout) const {
     if (!deviceHandle_) {
         return UsbError::NotConnected;
     }
 
     auto* handle = static_cast<libusb_device_handle*>(deviceHandle_);
-    int result = libusb_bulk_transfer(handle, readEndpoint_, buffer, size, actualLength, timeout);
 
-    if (result == LIBUSB_SUCCESS) {
+    if (const int result = libusb_bulk_transfer(handle, readEndpoint_, buffer, size, actualLength, timeout); result == LIBUSB_SUCCESS) {
         return UsbError::Success;
     } else if (result == LIBUSB_ERROR_TIMEOUT) {
         return UsbError::Timeout;
@@ -102,15 +99,14 @@ UsbError UsbDevice::read(unsigned char* buffer, int size, int* actualLength, uns
     return UsbError::TransferFailed;
 }
 
-UsbError UsbDevice::write(unsigned char* buffer, int size, int* actualLength, unsigned int timeout) {
+UsbError UsbDevice::write(unsigned char* buffer, const int size, int* actualLength, const unsigned int timeout) const {
     if (!deviceHandle_) {
         return UsbError::NotConnected;
     }
 
     auto* handle = static_cast<libusb_device_handle*>(deviceHandle_);
-    int result = libusb_bulk_transfer(handle, writeEndpoint_, buffer, size, actualLength, timeout);
 
-    if (result == LIBUSB_SUCCESS) {
+    if (const int result = libusb_bulk_transfer(handle, writeEndpoint_, buffer, size, actualLength, timeout); result == LIBUSB_SUCCESS) {
         return UsbError::Success;
     } else if (result == LIBUSB_ERROR_TIMEOUT) {
         return UsbError::Timeout;
